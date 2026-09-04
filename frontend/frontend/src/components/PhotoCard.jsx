@@ -2,24 +2,26 @@ import React from "react";
 import { API_BASE_URL } from "../services/api";
 
 function PhotoCard({ photo }) {
-    const src = photo.photo.startsWith("http") ? photo.photo : `${API_BASE_URL}/uploads/event_photos/${photo.photo}`;
-    const filename = photo.photo.split("/").pop().split("?")[0] || "event-photo";
+    // Support both old keys (photo, similarity) and new keys (image_url, similarity_score)
+    const url = photo.image_url || photo.photo || "";
+    const score = photo.similarity_score ?? photo.similarity ?? null;
+
+    const src = url.startsWith("http") ? url : `${API_BASE_URL}/uploads/event_photos/${url}`;
+    const filename = url.split("/").pop().split("?")[0] || "event-photo";
 
     const downloadImage = async () => {
         try {
             const response = await fetch(src);
-            if (!response.ok) {
-                throw new Error(`Failed to download image: ${response.statusText}`);
-            }
+            if (!response.ok) throw new Error(`Failed to download: ${response.statusText}`);
             const blob = await response.blob();
-            const url = window.URL.createObjectURL(blob);
+            const objectUrl = window.URL.createObjectURL(blob);
             const link = document.createElement("a");
-            link.href = url;
+            link.href = objectUrl;
             link.download = filename;
             document.body.appendChild(link);
             link.click();
             link.remove();
-            window.URL.revokeObjectURL(url);
+            window.URL.revokeObjectURL(objectUrl);
         } catch (err) {
             console.error(err);
             alert("Unable to download image. Please try again.");
@@ -33,7 +35,7 @@ function PhotoCard({ photo }) {
             </div>
             <div className="photo-details">
                 <h4>{filename}</h4>
-                <p>Similarity: <strong>{photo.similarity}</strong></p>
+                {score !== null && <p>Similarity: <strong>{score}</strong></p>}
             </div>
             <button className="download-button" onClick={downloadImage}>Download</button>
         </article>

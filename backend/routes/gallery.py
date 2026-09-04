@@ -21,7 +21,11 @@ async def upload(files:list[UploadFile]=File(...),user=Depends(current_user)):
     return {"message":f"Uploaded {len(photos)} photo(s)","photos":photos}
 @router.get("")
 def list_photos(user=Depends(current_user)):
-    with connection() as db: rows=db.execute("SELECT id,title,image_url,thumbnail_url,created_at FROM gallery_photos WHERE user_id=? ORDER BY id DESC",(user["id"],)).fetchall()
+    with connection() as db:
+        rows = db.execute(
+            "SELECT id,title,image_url,thumbnail_url,created_at FROM gallery_photos WHERE user_id=? AND album_only = FALSE ORDER BY id DESC",
+            (user["id"],)
+        ).fetchall()
     return {"photos":[dict(x) for x in rows]}
 @router.get("/{photo_id}")
 def single(photo_id:int,user=Depends(current_user)):
@@ -42,3 +46,18 @@ def delete_photo(photo_id: int, user=Depends(current_user)):
     except Exception:
         pass
     return {"message": "Photo deleted"}
+
+
+@router.post("/add-from-album")
+def add_to_gallery(body: dict, user=Depends(current_user)):
+    """Move selected album photos into My Gallery (set album_only=FALSE)."""
+    photo_ids = body.get("photo_ids", [])
+    if not photo_ids:
+        raise HTTPException(422, "No photo IDs provided")
+    with connection() as db:
+        for photo_id in photo_ids:
+            db.execute(
+                "UPDATE gallery_photos SET album_only = FALSE WHERE id = ? AND user_id = ?",
+                (photo_id, user["id"])
+            )
+    return {"message": f"{len(photo_ids)} photo(s) added to your gallery"}

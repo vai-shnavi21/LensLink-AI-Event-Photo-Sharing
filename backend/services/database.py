@@ -67,3 +67,31 @@ def setup_database():
                     UNIQUE (owner_user_id, source_url, face_index)
                 )
             """)
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS events (
+                    id          BIGSERIAL PRIMARY KEY,
+                    user_id     BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    name        TEXT NOT NULL,
+                    event_date  DATE NOT NULL,
+                    description TEXT,
+                    created_at  TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS albums (
+                    id          BIGSERIAL PRIMARY KEY,
+                    event_id    BIGINT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+                    name        TEXT NOT NULL,
+                    description TEXT,
+                    created_at  TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS album_photos (
+                    id          BIGSERIAL PRIMARY KEY,
+                    album_id    BIGINT NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
+                    photo_id    BIGINT NOT NULL REFERENCES gallery_photos(id) ON DELETE CASCADE,
+                    created_at  TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE (album_id, photo_id)
+                )
+            """)

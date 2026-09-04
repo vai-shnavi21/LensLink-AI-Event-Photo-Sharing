@@ -13,6 +13,11 @@ import Results from "./pages/Results";
 import Auth from "./pages/Auth";
 import Profile from "./pages/Profile";
 import MyGallery from "./pages/MyGallery";
+import Events from "./pages/Events";
+import EventDetail from "./pages/EventDetail";
+import AlbumDetail from "./pages/AlbumDetail";
+import People from "./pages/People";
+import PersonDetail from "./pages/PersonDetail";
 
 function HashTokenListener() {
   const navigate = useNavigate();
@@ -51,6 +56,11 @@ function App() {
         <Route path="/signin" element={<Auth />} />
         <Route path="/profile" element={<ProtectedRoute element={<Profile />} />} />
         <Route path="/my-gallery" element={<ProtectedRoute element={<MyGallery />} />} />
+        <Route path="/events" element={<ProtectedRoute element={<Events />} />} />
+        <Route path="/events/:eventId" element={<ProtectedRoute element={<EventDetail />} />} />
+        <Route path="/events/:eventId/albums/:albumId" element={<ProtectedRoute element={<AlbumDetail />} />} />
+        <Route path="/people" element={<ProtectedRoute element={<People />} />} />
+        <Route path="/people/:clusterId" element={<ProtectedRoute element={<PersonDetail />} />} />
       </Routes>
     </BrowserRouter>
   );

@@ -575,9 +575,16 @@ def process_cloud_event_photos(
             continue
 
         try:
-            image = _resize_for_detection(
-                image
-            )
+            # Record original dimensions before resizing so we can scale
+            # bounding boxes back to original image coordinates.
+            orig_h, orig_w = image.shape[:2]
+
+            image = _resize_for_detection(image)
+
+            # Compute the scale factor that was applied
+            det_h, det_w = image.shape[:2]
+            scale_x = orig_w / det_w if det_w > 0 else 1.0
+            scale_y = orig_h / det_h if det_h > 0 else 1.0
 
             faces = model.get(image)
 
@@ -591,11 +598,14 @@ def process_cloud_event_photos(
                     .tolist()
                 )
 
-                bounding_box = (
-                    face.bbox
-                    .astype("float32")
-                    .tolist()
-                )
+                # Scale bbox back to original image coordinates
+                x1, y1, x2, y2 = face.bbox.astype("float32").tolist()
+                bounding_box = [
+                    x1 * scale_x,
+                    y1 * scale_y,
+                    x2 * scale_x,
+                    y2 * scale_y,
+                ]
 
                 records.append(
                     (
@@ -706,109 +716,119 @@ def search_faces(
     query_embedding,
     threshold: float = 0.60,
     top_k: int = 50,
-):
+    owner_user_id: int | None = None,
+    search_scope: str = "gallery",
+    scope_id: int | None = None,
+) -> list[dict]:
     """
-    Compare a selfie embedding against
-    embeddings stored in PostgreSQL.
-
-    No local FAISS index is used.
+    Compare a selfie embedding against embeddings stored in PostgreSQL.
+    Supports gallery / event / album scopes for filtered searches.
     """
 
-    query = np.asarray(
-        query_embedding,
-        dtype="float32",
-    )
-
-    query_norm = np.linalg.norm(
-        query
-    )
-
+    query = np.asarray(query_embedding, dtype="float32")
+    query_norm = np.linalg.norm(query)
     if query_norm == 0:
         return []
 
     with connection() as db:
+        if owner_user_id is None:
+            # Legacy callers — no ownership filter
+            rows = db.execute(
+                "SELECT source_url, embedding FROM face_embeddings"
+            ).fetchall()
+        elif search_scope == "event" and scope_id is not None:
+            rows = db.execute(
+                """
+                SELECT DISTINCT fe.source_url, fe.embedding
+                FROM face_embeddings fe
+                JOIN gallery_photos gp ON gp.image_url = fe.source_url
+                JOIN album_photos ap ON ap.photo_id = gp.id
+                JOIN albums al ON al.id = ap.album_id
+                JOIN events ev ON ev.id = al.event_id
+                WHERE fe.owner_user_id = ?
+                  AND ev.id = ?
+                  AND ev.user_id = ?
+                """,
+                (owner_user_id, scope_id, owner_user_id),
+            ).fetchall()
+        elif search_scope == "album" and scope_id is not None:
+            rows = db.execute(
+                """
+                SELECT DISTINCT fe.source_url, fe.embedding
+                FROM face_embeddings fe
+                JOIN gallery_photos gp ON gp.image_url = fe.source_url
+                JOIN album_photos ap ON ap.photo_id = gp.id
+                JOIN albums al ON al.id = ap.album_id
+                JOIN events ev ON ev.id = al.event_id
+                WHERE fe.owner_user_id = ?
+                  AND ap.album_id = ?
+                  AND ev.user_id = ?
+                """,
+                (owner_user_id, scope_id, owner_user_id),
+            ).fetchall()
+        else:
+            # gallery scope (default)
+            rows = db.execute(
+                "SELECT source_url, embedding FROM face_embeddings WHERE owner_user_id = ?",
+                (owner_user_id,),
+            ).fetchall()
 
-        rows = db.execute(
-            """
-            SELECT
-                source_url,
-                embedding
-            FROM face_embeddings
-            """
-        ).fetchall()
-
-    best_by_photo = {}
+    best_by_photo: dict[str, float] = {}
 
     for row in rows:
-
-        raw_embedding = row[
-            "embedding"
-        ]
-
-        if isinstance(
-            raw_embedding,
-            str,
-        ):
-            embedding_data = json.loads(
-                raw_embedding
-            )
-        else:
-            embedding_data = raw_embedding
-
-        vector = np.asarray(
-            embedding_data,
-            dtype="float32",
-        )
-
-        vector_norm = np.linalg.norm(
-            vector
-        )
-
-        denominator = (
-            query_norm
-            * vector_norm
-        )
-
-        if denominator == 0:
+        raw = row["embedding"]
+        embedding_data = json.loads(raw) if isinstance(raw, str) else raw
+        vector = np.asarray(embedding_data, dtype="float32")
+        vector_norm = np.linalg.norm(vector)
+        denom = query_norm * vector_norm
+        if denom == 0:
             continue
-
-        score = float(
-            np.dot(
-                query,
-                vector,
-            )
-            / denominator
-        )
-
+        score = float(np.dot(query, vector) / denom)
         if score >= threshold:
+            url = row["source_url"]
+            best_by_photo[url] = max(score, best_by_photo.get(url, -1.0))
 
-            source_url = row[
-                "source_url"
-            ]
-
-            best_by_photo[
-                source_url
-            ] = max(
-                score,
-                best_by_photo.get(
-                    source_url,
-                    -1.0,
-                ),
-            )
-
-    results = [
-        {
-            "photo": photo,
-            "similarity": round(
-                score,
-                3,
-            ),
-        }
-        for photo, score in sorted(
-            best_by_photo.items(),
-            key=lambda item: item[1],
-            reverse=True,
-        )[:top_k]
+    return [
+        {"image_url": url, "similarity_score": round(score, 3)}
+        for url, score in sorted(best_by_photo.items(), key=lambda x: x[1], reverse=True)[:top_k]
     ]
 
-    return results
+
+def search_faces_multi(
+    selfie_embeddings: list,
+    threshold: float = 0.60,
+    top_k: int = 50,
+    owner_user_id: int | None = None,
+    search_scope: str = "gallery",
+    scope_id: int | None = None,
+) -> tuple[list[dict], list[str | None]]:
+    """
+    Run search_faces for each embedding in the batch.
+    Aggregate results, deduplicate by URL keeping highest score.
+    Returns (aggregated_results, per_selfie_errors).
+    """
+    per_selfie_errors: list[str | None] = []
+    aggregated: dict[str, float] = {}
+
+    for embedding in selfie_embeddings:
+        if embedding is None:
+            per_selfie_errors.append("No face detected in selfie")
+            continue
+        per_selfie_errors.append(None)
+        results = search_faces(
+            embedding,
+            threshold=threshold,
+            top_k=top_k,
+            owner_user_id=owner_user_id,
+            search_scope=search_scope,
+            scope_id=scope_id,
+        )
+        for item in results:
+            url = item["image_url"]
+            aggregated[url] = max(item["similarity_score"], aggregated.get(url, -1.0))
+
+    merged = [
+        {"image_url": url, "similarity_score": round(score, 3)}
+        for url, score in sorted(aggregated.items(), key=lambda x: x[1], reverse=True)[:top_k]
+    ]
+    return merged, per_selfie_errors
