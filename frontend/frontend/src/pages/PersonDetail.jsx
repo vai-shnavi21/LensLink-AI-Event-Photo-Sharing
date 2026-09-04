@@ -23,8 +23,9 @@ export default function PersonDetail() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, [clusterId]);
-
+  // useEffect(() => { load(); }, [clusterId]);
+ // eslint-disable-next-line react-hooks/exhaustive-deps
+useEffect(() => { load(); }, [clusterId]);
   return (
     <main className="content-shell">
       <section className="page-card">
