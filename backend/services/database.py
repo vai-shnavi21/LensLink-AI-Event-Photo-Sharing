@@ -52,8 +52,15 @@ def setup_database():
                     image_url TEXT NOT NULL,
                     thumbnail_url TEXT,
                     title TEXT NOT NULL,
+                    album_only BOOLEAN NOT NULL DEFAULT FALSE,
                     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
                 )
+            """)
+            # Existing deployments may have been created before album_only was
+            # introduced.  Keep startup migrations safe and idempotent.
+            db.execute("""
+                ALTER TABLE gallery_photos
+                ADD COLUMN IF NOT EXISTS album_only BOOLEAN NOT NULL DEFAULT FALSE
             """)
             db.execute("""
                 CREATE TABLE IF NOT EXISTS face_embeddings (

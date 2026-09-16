@@ -97,6 +97,14 @@ export default function UploadSelfie() {
 
   const searchPhotos = async () => {
     if (!selfies.length) { setError("Upload at least one selfie first."); return; }
+    if (scope === "event" && !selectedEventId) {
+      setError("Select an event before searching.");
+      return;
+    }
+    if (scope === "album" && !selectedAlbumId) {
+      setError("Select an album before searching.");
+      return;
+    }
     setSearching(true);
     setError("");
 

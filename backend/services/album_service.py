@@ -163,13 +163,20 @@ def upload_photos_to_album(
         except Exception as exc:
             results.append({"status": "error", "filename": file.filename, "reason": str(exc)})
 
+    indexing = {"status": "not_needed"}
     if cloud_urls:
         try:
-            process_cloud_event_photos(cloud_urls, owner_user_id=user_id)
-        except Exception:
-            pass
+            indexed = process_cloud_event_photos(cloud_urls, owner_user_id=user_id)
+            indexing = {
+                "status": "complete" if indexed else "no_faces_detected",
+            }
+        except Exception as exc:
+            # Uploads are already durable, so return them to the user. Do not
+            # silently hide the indexing problem: Find Photos can retry the
+            # same album automatically later.
+            indexing = {"status": "failed", "message": str(exc)}
 
-    return {"results": results}
+    return {"results": results, "indexing": indexing}
 
 
 def map_photos_to_album(

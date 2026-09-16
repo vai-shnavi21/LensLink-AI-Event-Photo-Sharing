@@ -3,6 +3,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from routes.auth import current_user
 from services.database import connection
+from services.face_service import process_cloud_event_photos
 router=APIRouter(prefix="/gallery",tags=["My Gallery"])
 def uploader():
     if not all(os.getenv(k) for k in ("CLOUDINARY_CLOUD_NAME","CLOUDINARY_API_KEY","CLOUDINARY_API_SECRET")): raise HTTPException(503,"Cloudinary is not configured. Add backend/.env credentials.")
@@ -18,6 +19,16 @@ async def upload(files:list[UploadFile]=File(...),user=Depends(current_user)):
         title=Path(file.filename or "Photo").stem
         with connection() as db: photo_id=db.execute("INSERT INTO gallery_photos(user_id,public_id,image_url,thumbnail_url,title) VALUES(?,?,?,?,?) RETURNING id",(user["id"],result["public_id"],result["secure_url"],result["secure_url"],title)).fetchone()["id"]
         photos.append({"id":photo_id,"title":title,"image_url":result["secure_url"],"thumbnail_url":result["secure_url"]})
+    # Gallery uploads must also be indexed; otherwise they appear in the
+    # gallery but cannot be found by selfie search or shown in People.
+    try:
+        process_cloud_event_photos(
+            [photo["image_url"] for photo in photos], owner_user_id=user["id"]
+        )
+    except Exception:
+        # The upload itself succeeded. A later re-upload can safely retry
+        # indexing because face_embeddings has a uniqueness constraint.
+        pass
     return {"message":f"Uploaded {len(photos)} photo(s)","photos":photos}
 @router.get("")
 def list_photos(user=Depends(current_user)):
@@ -37,10 +48,17 @@ def single(photo_id:int,user=Depends(current_user)):
 def delete_photo(photo_id: int, user=Depends(current_user)):
     """Delete a gallery image only when it belongs to the signed-in user."""
     with connection() as db:
-        row = db.execute("SELECT public_id FROM gallery_photos WHERE id=? AND user_id=?", (photo_id, user["id"])).fetchone()
+        row = db.execute("SELECT public_id, image_url FROM gallery_photos WHERE id=? AND user_id=?", (photo_id, user["id"])).fetchone()
         if not row:
             raise HTTPException(404, "Photo not found")
         db.execute("DELETE FROM gallery_photos WHERE id=? AND user_id=?", (photo_id, user["id"]))
+        # face_embeddings is not a foreign-key child of gallery_photos. Remove
+        # its rows explicitly so deleted images cannot remain in People or
+        # Find Photos results.
+        db.execute(
+            "DELETE FROM face_embeddings WHERE owner_user_id=? AND source_url=?",
+            (user["id"], row["image_url"]),
+        )
     try:
         uploader().destroy(row["public_id"], resource_type="image", invalidate=True)
     except Exception:

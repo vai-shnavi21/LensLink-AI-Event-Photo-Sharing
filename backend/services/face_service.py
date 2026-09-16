@@ -566,6 +566,8 @@ def process_cloud_event_photos(
             )
         )
 
+    downloaded_images = 0
+
     for url, image in zip(
         cloud_urls,
         images,
@@ -573,6 +575,8 @@ def process_cloud_event_photos(
 
         if image is None:
             continue
+
+        downloaded_images += 1
 
         try:
             # Record original dimensions before resizing so we can scale
@@ -625,6 +629,9 @@ def process_cloud_event_photos(
             # Release the OpenCV image from memory.
             del image
 
+    if downloaded_images == 0:
+        raise RuntimeError("Could not download any uploaded photo for face indexing")
+
     if not records:
         return False
 
@@ -662,6 +669,35 @@ def process_cloud_event_photos(
             )
 
     return True
+
+
+def index_unprocessed_photos(owner_user_id: int, source_urls: list[str]) -> bool:
+    """Index only photos that do not yet have a stored face embedding.
+
+    This repairs photos uploaded before face indexing was connected to albums
+    and avoids re-running recognition for photos that are already indexed.
+    """
+    urls = list(dict.fromkeys(url for url in source_urls if url))
+    if not urls:
+        return False
+
+    placeholders = ",".join("?" for _ in urls)
+    with connection() as db:
+        rows = db.execute(
+            f"""
+            SELECT DISTINCT source_url
+            FROM face_embeddings
+            WHERE owner_user_id = ? AND source_url IN ({placeholders})
+            """,
+            (owner_user_id, *urls),
+        ).fetchall()
+
+    indexed_urls = {row["source_url"] for row in rows}
+    pending_urls = [url for url in urls if url not in indexed_urls]
+    if not pending_urls:
+        return False
+
+    return process_cloud_event_photos(pending_urls, owner_user_id)
 
 
 def generate_selfie_embedding_from_cloud(

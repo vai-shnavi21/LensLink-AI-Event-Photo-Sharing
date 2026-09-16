@@ -62,7 +62,7 @@ async def upload_photos(
     if has_error and not has_success:
         raise HTTPException(400, detail={"errors": results})
 
-    return {"photos": photos}
+    return {"photos": photos, "indexing": result.get("indexing")}
 
 
 @router.post("/map")

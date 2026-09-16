@@ -173,4 +173,20 @@ def get_photos_for_cluster(user_id: int, cluster_id: int) -> list[dict] | None:
             (user_id, *source_urls),
         ).fetchall()
 
-    return [dict(r) for r in rows]
+    # Older event uploads were indexed in face_embeddings without a matching
+    # gallery_photos row. Keep those existing photos visible while new uploads
+    # are persisted correctly by the upload route.
+    photos_by_url = {row["image_url"]: dict(row) for row in rows}
+    photos = []
+    for url in source_urls:
+        photo = photos_by_url.get(url)
+        if photo is None:
+            filename = urlparse(url).path.rsplit("/", 1)[-1] or "Photo"
+            photo = {
+                "id": f"indexed:{url}",
+                "image_url": url,
+                "thumbnail_url": url,
+                "title": filename,
+            }
+        photos.append(photo)
+    return photos

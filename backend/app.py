@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from typing import Optional
 from dotenv import load_dotenv
 
@@ -11,11 +12,12 @@ load_dotenv(DOTENV_PATH)
 
 from services.face_service import (
     generate_selfie_embedding_from_cloud,
+    index_unprocessed_photos,
     process_cloud_event_photos,
     search_faces,
     search_faces_multi,
 )
-from services.database import setup_database
+from services.database import connection, setup_database
 from services import event_service, album_service
 from routes.auth import router as auth_router
 from routes.gallery import router as gallery_router
@@ -78,7 +80,22 @@ async def upload_event(
         except Exception as exc:
             raise HTTPException(502, f"Failed to upload {file.filename} to Cloudinary") from exc
         cloud_urls.append(result["secure_url"])
+        title = Path(file.filename or "Photo").stem
+        # People and scoped searches resolve matches through gallery_photos.
+        # Persist every event upload before indexing its faces so both flows
+        # refer to the same owner-scoped photo record.
+        with connection() as db:
+            photo_id = db.execute(
+                """
+                INSERT INTO gallery_photos
+                    (user_id, public_id, image_url, thumbnail_url, title, album_only)
+                VALUES (?, ?, ?, ?, ?, FALSE)
+                RETURNING id
+                """,
+                (user["id"], result["public_id"], result["secure_url"], result["secure_url"], title),
+            ).fetchone()["id"]
         uploaded_photos.append({
+            "id": photo_id,
             "filename": file.filename,
             "cloud_url": result["secure_url"],
             "public_id": result["public_id"],
@@ -97,6 +114,11 @@ async def search(
     user=Depends(current_user),
 ):
     allowed_types = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+
+    if search_scope not in {"gallery", "event", "album"}:
+        raise HTTPException(422, "search_scope must be gallery, event, or album")
+    if search_scope in {"event", "album"} and scope_id is None:
+        raise HTTPException(422, "Select an event or album before searching")
 
     if len(files) > 10:
         raise HTTPException(400, "Maximum is 10 selfies per request")
@@ -120,6 +142,40 @@ async def search(
             ).fetchone()
         if not row:
             raise HTTPException(404, "Album not found or access denied")
+
+    # Index only legacy/unprocessed photos in the selected scope before
+    # matching. Album uploads previously hid indexing errors, which left
+    # visible images with no searchable face embeddings.
+    with connection() as db:
+        if search_scope == "event":
+            photo_rows = db.execute(
+                """
+                SELECT DISTINCT gp.image_url
+                FROM gallery_photos gp
+                JOIN album_photos ap ON ap.photo_id = gp.id
+                JOIN albums al ON al.id = ap.album_id
+                WHERE al.event_id = ? AND gp.user_id = ?
+                """,
+                (scope_id, user["id"]),
+            ).fetchall()
+        elif search_scope == "album":
+            photo_rows = db.execute(
+                """
+                SELECT gp.image_url FROM gallery_photos gp
+                JOIN album_photos ap ON ap.photo_id = gp.id
+                WHERE ap.album_id = ? AND gp.user_id = ?
+                """,
+                (scope_id, user["id"]),
+            ).fetchall()
+        else:
+            photo_rows = db.execute(
+                "SELECT image_url FROM gallery_photos WHERE user_id = ?",
+                (user["id"],),
+            ).fetchall()
+    try:
+        index_unprocessed_photos(user["id"], [row["image_url"] for row in photo_rows])
+    except Exception as exc:
+        raise HTTPException(503, f"Could not index photos for this search: {exc}") from exc
 
     # Upload all selfies and generate embeddings
     embeddings = []

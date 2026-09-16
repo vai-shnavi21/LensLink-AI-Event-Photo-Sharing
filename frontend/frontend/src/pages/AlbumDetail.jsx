@@ -36,6 +36,11 @@ export default function AlbumDetail() {
         { headers: { ...authHeaders() } }
       );
       setPhotos((prev) => [...prev, ...(data.photos || [])]);
+      if (data.indexing?.status === "failed") {
+        setError(`Photos uploaded, but face scanning failed: ${data.indexing.message}`);
+      } else if (data.indexing?.status === "no_faces_detected") {
+        setError("Photos uploaded, but no faces were detected in them.");
+      }
     } catch (err) {
       setError(err.response?.data?.detail || "Upload failed. Please try again.");
     } finally {
