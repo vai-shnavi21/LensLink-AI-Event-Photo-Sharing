@@ -26,6 +26,7 @@ from routes.events import router as events_router
 from routes.albums import router as albums_router
 from routes.album_photos import router as album_photos_router
 from routes.people import router as people_router
+from routes.sharing import router as sharing_router
 from routes.auth import current_user
 from services.cloudinary_service import upload_event_photo, upload_selfie
 
@@ -41,6 +42,7 @@ app.include_router(events_router)
 app.include_router(albums_router)
 app.include_router(album_photos_router)
 app.include_router(people_router)
+app.include_router(sharing_router)
 
 # ── CORS ─────────────────────────────────────────────────────────────────────
 

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import API from "../services/api";
 import { authHeaders } from "../services/auth";
+import WatermarkPanel from "../components/WatermarkPanel";
 
 export default function AlbumDetail() {
   const { eventId, albumId } = useParams();
@@ -202,6 +203,7 @@ export default function AlbumDetail() {
             </div>
           </div>
         )}
+        <WatermarkPanel endpoint={`/events/${eventId}/albums/${albumId}/watermark`} title="Album watermark" />
       </section>
     </main>
   );

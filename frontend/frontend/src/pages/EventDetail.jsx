@@ -19,6 +19,20 @@ export default function EventDetail() {
   const [editAlbumForm, setEditAlbumForm] = useState({ name: "", description: "" });
   const [editAlbumError, setEditAlbumError] = useState("");
   const [editAlbumSubmitting, setEditAlbumSubmitting] = useState(false);
+  const [share, setShare] = useState("");
+  const [shareMessage, setShareMessage] = useState("");
+
+  const openShare = async () => {
+    try {
+      const { data } = await API.get(`/events/${eventId}/share`, { headers: authHeaders() });
+      setShare(`${window.location.origin}/g/${data.token}`);
+      setShareMessage("");
+    } catch { setShareMessage("Could not generate a sharing link."); }
+  };
+  const copyShare = async () => {
+    try { await navigator.clipboard.writeText(share); setShareMessage("Link copied to clipboard."); }
+    catch { setShareMessage("Copy the link from the field below."); }
+  };
 
   useEffect(() => {
     Promise.all([
@@ -95,10 +109,13 @@ export default function EventDetail() {
             <p className="muted">{event.event_date}</p>
             {event.description && <p>{event.description}</p>}
           </div>
-          <button className="primary-button" onClick={() => setShowForm(!showForm)}>
-            {showForm ? "Cancel" : "+ New Album"}
-          </button>
+          <div className="action-row">
+            <button className="secondary-button" onClick={openShare}>Share event</button>
+            <button className="primary-button" onClick={() => setShowForm(!showForm)}>{showForm ? "Cancel" : "+ New Album"}</button>
+          </div>
         </div>
+        {share && <div className="share-panel"><div><strong>Share your event gallery</strong><p className="muted">Guests can open every album on any device.</p><input readOnly value={share} aria-label="Event sharing link" /></div><div className="share-actions"><button className="primary-button" onClick={copyShare}>Copy link</button><a className="secondary-button" href={`https://api.qrserver.com/v1/create-qr-code/?size=1200x1200&format=png&data=${encodeURIComponent(share)}`} target="_blank" rel="noreferrer">Download QR PNG</a></div>{shareMessage && <p className="success-message">{shareMessage}</p>}</div>}
+        {!share && shareMessage && <p className="form-error">{shareMessage}</p>}
 
         {showForm && (
           <form className="inline-form" onSubmit={handleCreateAlbum}>

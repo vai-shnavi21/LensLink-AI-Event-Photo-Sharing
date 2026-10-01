@@ -84,6 +84,9 @@ def setup_database():
                     created_at  TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            db.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS share_token UUID DEFAULT gen_random_uuid()")
+            db.execute("UPDATE events SET share_token = gen_random_uuid() WHERE share_token IS NULL")
+            db.execute("CREATE UNIQUE INDEX IF NOT EXISTS events_share_token_key ON events(share_token)")
             db.execute("""
                 CREATE TABLE IF NOT EXISTS albums (
                     id          BIGSERIAL PRIMARY KEY,
@@ -102,3 +105,20 @@ def setup_database():
                     UNIQUE (album_id, photo_id)
                 )
             """)
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS watermark_settings (
+                    id BIGSERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    album_id BIGINT REFERENCES albums(id) ON DELETE CASCADE,
+                    enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                    image_url TEXT,
+                    secondary_image_url TEXT,
+                    text_value TEXT,
+                    position TEXT NOT NULL DEFAULT 'bottom-right',
+                    opacity INTEGER NOT NULL DEFAULT 45,
+                    preview_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                    download_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                    UNIQUE (user_id, album_id)
+                )
+            """)
+            db.execute("CREATE UNIQUE INDEX IF NOT EXISTS watermark_settings_scope_key ON watermark_settings(user_id, COALESCE(album_id, -1))")

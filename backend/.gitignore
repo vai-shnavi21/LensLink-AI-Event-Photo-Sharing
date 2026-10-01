@@ -10,3 +10,4 @@ faiss_index/
 *.db
 *.log
 .env
+!.env.example

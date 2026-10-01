@@ -18,6 +18,7 @@ import EventDetail from "./pages/EventDetail";
 import AlbumDetail from "./pages/AlbumDetail";
 import People from "./pages/People";
 import PersonDetail from "./pages/PersonDetail";
+import GuestGallery from "./pages/PublicGuestGallery";
 
 function HashTokenListener() {
   const navigate = useNavigate();
@@ -61,6 +62,7 @@ function App() {
         <Route path="/events/:eventId/albums/:albumId" element={<ProtectedRoute element={<AlbumDetail />} />} />
         <Route path="/people" element={<ProtectedRoute element={<People />} />} />
         <Route path="/people/:clusterId" element={<ProtectedRoute element={<PersonDetail />} />} />
+        <Route path="/g/:token" element={<GuestGallery />} />
       </Routes>
     </BrowserRouter>
   );

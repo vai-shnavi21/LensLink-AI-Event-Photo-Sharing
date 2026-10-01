@@ -1,6 +1,7 @@
 import React, { useRef, useState } from "react";
 import API from "../services/api";
 import { authHeaders, authToken, saveSession, session } from "../services/auth";
+import WatermarkPanel from "../components/WatermarkPanel";
 
 export default function Profile() {
   const user = session();
@@ -32,5 +33,5 @@ export default function Profile() {
     <div className="avatar-editor"><div className="profile-avatar">{avatarUrl ? <img src={avatarUrl} alt="Profile" /> : fullName.charAt(0).toUpperCase()}</div><button type="button" className="avatar-edit-button" onClick={() => fileRef.current?.click()} disabled={uploadingAvatar}>{uploadingAvatar ? "Uploading..." : "Change photo"}</button><input ref={fileRef} className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={uploadAvatar} /></div>
     <div><p className="eyebrow">ACCOUNT SETTINGS</p><h1>My profile</h1><p className="muted">Add a recognizable photo and keep your details current.</p></div>
     <form onSubmit={save}><label>Full name<input value={fullName} onChange={(e) => setName(e.target.value)} required minLength="2" /></label><label>Profile photo URL <span className="optional">Optional</span><input type="url" value={avatarUrl} onChange={(e) => setAvatar(e.target.value)} placeholder="https://example.com/photo.jpg" /></label><button className="primary-button" disabled={saving}>{saving ? "Saving..." : "Save changes"}</button>{message && <p className="success-message">{message}</p>}</form>
-  </section></main>;
+  <WatermarkPanel /></section></main>;
 }
